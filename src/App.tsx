@@ -1,4 +1,5 @@
 import "./App.css";
+import "@twa-dev/sdk";
 import { TonConnectButton } from "@tonconnect/ui-react";
 import {
   defaultAmount,
