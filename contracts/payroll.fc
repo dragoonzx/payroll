@@ -1,0 +1,193 @@
+#include "stdlib.fc";
+
+(cell) build_stream_info(int to, int startTime, int endTime, int amount, int claimed){
+	return begin_cell()
+	.store_int(to, 257)
+	.store_int(startTime, 64) ;; startTime
+	.store_int(endTime, 64) ;; endTime
+	.store_int(amount, 257) ;; amount
+	.store_int(claimed, 257) ;; claimed
+	.end_cell();
+}
+
+(int, int, int, int, int) getSourceInfo(cell streamCell){
+	slice streamSlice = streamCell.begin_parse();
+	int to = streamSlice~load_int(257);
+	int startTime = streamSlice~load_int(64);
+	int endTime = streamSlice~load_int(64);
+	int amount = streamSlice~load_int(257);
+	int claimed = streamSlice~load_int(257);
+
+	return(to, startTime, endTime, amount, claimed);
+}
+
+() send_grams(slice to, int amount){
+	var msg = begin_cell()
+		.store_uint(0x10, 6)
+		.store_slice(to)
+		.store_grams(amount)
+		.store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+		.store_uint(3, 32)
+	.end_cell();
+	send_raw_message(msg, 0);
+}
+
+
+(int, int, int, slice, int) parse_op_common_data(cell in_msg, slice in_msg_body) inline {
+	~strdump("address parse");
+	var cs = in_msg.begin_parse();
+	var flags = cs~load_uint(4);
+	slice sender_address_slice = cs~load_msg_addr();
+	(int w, int sender_address) = parse_std_addr(sender_address_slice);
+
+	int op = in_msg_body~load_uint(32);
+	int query_id = in_msg_body~load_uint(64);
+	slice interaction_address_slice = in_msg_body~load_msg_addr();
+  	(int ww, int interactionAddress) = parse_std_addr(interaction_address_slice);
+
+	return(op, query_id, sender_address, sender_address_slice, interactionAddress);
+}
+
+
+() save_data(cell senderDict, cell receiverDict) impure inline {
+	set_data(begin_cell()
+		.store_dict(senderDict)
+		.store_dict(receiverDict)
+		.end_cell());
+}
+
+(cell, cell) load_data(){
+	var ds = get_data().begin_parse();
+
+	if(ds.slice_bits() == 0) {
+		return(
+			new_dict(), 
+			new_dict()
+		);
+	}
+	else {
+		return (
+			ds~load_dict(), ;; sender -> stream dictionary
+			ds~load_dict()  ;; receier -> sender -> stream dictionary
+		);
+	}
+}
+
+() recv_internal(int msg_value, cell in_msg, slice in_msg_body) impure  {
+	;;(int op, int query_id, int senderAddress, slice sender_address_slice, int interactionAddress) = parse_op_common_data(in_msg, in_msg_body);
+	var cs = in_msg.begin_parse();
+	var flags = cs~load_uint(4);
+	slice sender_address_slice = cs~load_msg_addr();
+	(int w, int sender_address) = parse_std_addr(sender_address_slice);
+
+	int op = in_msg_body~load_uint(32);
+	int query_id = in_msg_body~load_uint(64);
+	slice interaction_address_slice = in_msg_body~load_msg_addr();
+  	(int ww, int interactionAddress) = parse_std_addr(interaction_address_slice);
+
+	(cell senderDict, cell receiverDict) = load_data();
+
+	if (op == 1) { ;;create new stream, interactionAddress = receiver
+		;;parse stream info
+		int startTime = in_msg_body~load_int(64);
+		int endTime = in_msg_body~load_int(64);
+		~dump(startTime);
+		~dump(endTime);
+		~dump(now());
+		;;get nested receiver dictionary, create if none is found
+		cell receiverInsideDict = receiverDict.idict_get_ref(257, interactionAddress);
+		receiverInsideDict = dict_empty?(receiverInsideDict) ? new_dict(): receiverInsideDict;
+
+		;;create cell with stream info
+		cell streamCell = build_stream_info(interactionAddress, startTime, endTime, msg_value, 0);
+		~dump(streamCell.begin_parse().slice_bits());
+
+		;;add new stream info and update dictionaries
+		receiverInsideDict~idict_set_ref(257, sender_address, streamCell);
+		receiverDict~idict_set_ref(257, interactionAddress, receiverInsideDict);
+		senderDict~idict_set_ref(257, sender_address, streamCell);
+		~dump(receiverInsideDict);
+		~dump(receiverDict);
+		~dump(senderDict);
+	}
+	elseif (op == 2) { ;;claim available, interactionAddress = funds sender
+		cell receiverInsideDict = receiverDict.idict_get_ref(257, sender_address);
+		cell streamCell = receiverInsideDict.idict_get_ref(257, interactionAddress);
+
+		;;get stream info
+		(int to, int startTime, int endTime, int amount, int claimed) = getSourceInfo(streamCell);
+
+		int perSecond = (endTime - startTime) / amount;
+		int lastTick = now();
+		if (now() > endTime){
+			lastTick = endTime;
+		}
+
+		int vested = (lastTick - startTime) * perSecond;
+		int claimable = vested - claimed;
+
+		;;send claimable
+		send_grams(sender_address_slice, claimable);
+
+		;;if this last withdraw, delete stream info cell
+		;;we use time instead of amount to not deal with rounding errors
+		if(now() > endTime){
+			receiverInsideDict.idict_delete?(257, interactionAddress);
+			senderDict.idict_delete?(257, interactionAddress);
+		} else {
+			;;create cell with stream info with modified claimed amount
+			cell streamCell = build_stream_info(to, startTime, endTime, amount, vested);
+
+			;;rewrite modified stream info
+			receiverInsideDict~idict_set_ref(257, interactionAddress, streamCell);
+			receiverDict~idict_set_ref(257, sender_address, begin_cell().store_dict(receiverInsideDict).end_cell());
+			senderDict~idict_set_ref(257, interactionAddress, streamCell);
+		}
+	}
+	else {
+		throw(12);
+	}
+
+	;;update dictionaries in storage
+	save_data(senderDict, receiverDict);
+	~strdump("THE END");
+}
+
+(int, int, int, int, int, int) getIncomingStreamNext(slice address_slice, int pivot) method_id {  
+  	(cell senderDict, cell receiverDict) = load_data();
+	var result = (0,0,0,0,0,1);
+
+	slice sender_address_slice = address_slice~load_msg_addr();
+	(int w, int address) = parse_std_addr(sender_address_slice);
+
+	ifnot(dict_empty?(receiverDict)){
+		(cell receiverInsideDict, int status) = receiverDict.idict_get_ref?(257, address);
+		result = (0,0,0,0,0,2);
+		ifnot(status == 0 | dict_empty?(receiverInsideDict)){
+			~dump(receiverInsideDict);
+			(int key, cell streamCell, int success) = receiverInsideDict.idict_get_min_ref?(257);
+			result = (0,0,0,0,0,3);
+			if (success) {
+				~dump(streamCell.begin_parse().slice_bits());
+				(int to, int startTime, int endTime, int amount, int claimed) = getSourceInfo(streamCell);
+				result = (to, startTime, endTime, amount, claimed, key);
+			}
+		}
+	}
+	return result;
+}
+
+(int, int, int, int, int) getOutcomingStream(int address) method_id {  
+  	(cell senderDict, cell receiverDict) = load_data();
+	var result = (0,0,0,0,0);
+
+	ifnot(dict_empty?(senderDict)){
+		cell streamInfo = senderDict.idict_get_ref(257, address);
+
+		;;get stream info
+		(int to, int startTime, int endTime, int amount, int claimed) = getSourceInfo(streamInfo);
+		result = (to, startTime, endTime, amount, claimed);
+	}
+
+	return result;
+}
