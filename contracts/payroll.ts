@@ -26,7 +26,7 @@ export default class Payroll implements Contract {
   async sendCreateStream(provider: ContractProvider, via: Sender, to: string) {
     const startTime = Math.floor(Date.now()/1000 - 10000);
     const endTime = Math.floor(Date.now()/1000 + 100000);
-    console.log(startTime + " " + endTime + " " + to);
+
     const messageBody = beginCell()
       .storeUint(1, 32) // op (op #1 = create stream)
       .storeUint(0, 64) // query id
@@ -35,14 +35,6 @@ export default class Payroll implements Contract {
       .storeInt(endTime, 64) //end time
       .endCell();
 
-    const a = messageBody.beginParse();
-    console.log(a.loadUint(32));
-    console.log(a.loadUint(64));
-    console.log(a.loadAddress());
-    console.log(a.loadInt(64));
-    console.log(a.loadInt(64));
-    
-    
     await provider.internal(via, {
       value: "0.05", // send 0.05 TON for gas
       body: messageBody

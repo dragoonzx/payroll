@@ -34,7 +34,6 @@
 
 
 (int, int, int, slice, int) parse_op_common_data(cell in_msg, slice in_msg_body) inline {
-	~strdump("address parse");
 	var cs = in_msg.begin_parse();
 	var flags = cs~load_uint(4);
 	slice sender_address_slice = cs~load_msg_addr();
@@ -91,24 +90,19 @@
 		;;parse stream info
 		int startTime = in_msg_body~load_int(64);
 		int endTime = in_msg_body~load_int(64);
-		~dump(startTime);
-		~dump(endTime);
-		~dump(now());
+
 		;;get nested receiver dictionary, create if none is found
 		cell receiverInsideDict = receiverDict.idict_get_ref(257, interactionAddress);
 		receiverInsideDict = dict_empty?(receiverInsideDict) ? new_dict(): receiverInsideDict;
 
 		;;create cell with stream info
 		cell streamCell = build_stream_info(interactionAddress, startTime, endTime, msg_value, 0);
-		~dump(streamCell.begin_parse().slice_bits());
 
 		;;add new stream info and update dictionaries
 		receiverInsideDict~idict_set_ref(257, sender_address, streamCell);
 		receiverDict~idict_set_ref(257, interactionAddress, receiverInsideDict);
 		senderDict~idict_set_ref(257, sender_address, streamCell);
-		~dump(receiverInsideDict);
-		~dump(receiverDict);
-		~dump(senderDict);
+
 	}
 	elseif (op == 2) { ;;claim available, interactionAddress = funds sender
 		cell receiverInsideDict = receiverDict.idict_get_ref(257, sender_address);
@@ -150,7 +144,6 @@
 
 	;;update dictionaries in storage
 	save_data(senderDict, receiverDict);
-	~strdump("THE END");
 }
 
 (int, int, int, int, int, int) getIncomingStreamNext(slice address_slice, int pivot) method_id {  
@@ -164,11 +157,9 @@
 		(cell receiverInsideDict, int status) = receiverDict.idict_get_ref?(257, address);
 		result = (0,0,0,0,0,2);
 		ifnot(status == 0 | dict_empty?(receiverInsideDict)){
-			~dump(receiverInsideDict);
 			(int key, cell streamCell, int success) = receiverInsideDict.idict_get_min_ref?(257);
 			result = (0,0,0,0,0,3);
 			if (success) {
-				~dump(streamCell.begin_parse().slice_bits());
 				(int to, int startTime, int endTime, int amount, int claimed) = getSourceInfo(streamCell);
 				result = (to, startTime, endTime, amount, claimed, key);
 			}
