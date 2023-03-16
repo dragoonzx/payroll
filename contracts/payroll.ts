@@ -23,28 +23,38 @@ export default class Payroll implements Contract {
   }
   
 
-  async sendCreateStream(provider: ContractProvider, via: Sender, to: string) {
-    const startTime = Math.floor(Date.now()/1000 - 10000);
-    const endTime = Math.floor(Date.now()/1000 + 100000);
-
+  async sendCreateStream(provider: ContractProvider, via: Sender, to: Address, startTime: number, endTime: number, amount: string) {
     const messageBody = beginCell()
       .storeUint(1, 32) // op (op #1 = create stream)
       .storeUint(0, 64) // query id
-      .storeAddress(Address.parseRaw(to)) //receiver
+      .storeAddress(to) //receiver
       .storeInt(startTime, 64) //start time
       .storeInt(endTime, 64) //end time
       .endCell();
 
     await provider.internal(via, {
-      value: "0.05", // send 0.05 TON for gas
+      value: amount, 
       body: messageBody
     });
   }
 
-  async getIncomingStreamNext(provider: ContractProvider, addr: string, pivot: bigint)
+  async sendClaim(provider: ContractProvider, via: Sender, addr: Address) {
+    const messageBody = beginCell()
+      .storeUint(2, 32) // op (op #2 = claim stream)
+      .storeUint(0, 64) // query id
+      .storeAddress(addr) //receiver
+      .endCell();
+
+    await provider.internal(via, {
+      value: "0.02", // send for gas
+      body: messageBody
+    });
+  }
+
+  async getIncomingStreamNext(provider: ContractProvider, addr: Address, pivot: bigint)
   : Promise<[bigint, bigint, bigint, bigint, bigint, bigint]> {
     const builder = new TupleBuilder;
-    builder.writeAddress(Address.parseRaw(addr));
+    builder.writeAddress(addr);
     builder.writeNumber(pivot);
     const { stack } = await provider.get("getIncomingStreamNext", builder.build());
 
@@ -58,10 +68,10 @@ export default class Payroll implements Contract {
     return [to, startTime, endTime, amount, claimed, key];
   }
 
-  async getOutcomingStream(provider: ContractProvider, addr: string)
+  async getOutcomingStream(provider: ContractProvider, addr: Address)
   : Promise<[bigint, bigint, bigint, bigint, bigint]> {
     const builder = new TupleBuilder;
-    builder.writeAddress(new Address(0, Buffer.from(addr)));
+    builder.writeAddress(addr);
     const { stack } = await provider.get("getIncomingStreamNext", builder.build());
 
     const to = stack.readBigNumber();
