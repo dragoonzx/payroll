@@ -21,16 +21,6 @@
 	return(to, startTime, endTime, amount, claimed);
 }
 
-() send_grams(slice to, int amount){
-	var msg = begin_cell()
-		.store_uint(0x10, 6)
-		.store_slice(to)
-		.store_grams(amount)
-		.store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
-		.store_uint(3, 32)
-	.end_cell();
-	send_raw_message(msg, 0);
-}
 
 
 (int, int, int, slice, int) parse_op_common_data(cell in_msg, slice in_msg_body) inline {
@@ -73,7 +63,6 @@
 }
 
 () recv_internal(int msg_value, cell in_msg, slice in_msg_body) impure  {
-	;;(int op, int query_id, int senderAddress, slice sender_address_slice, int interactionAddress) = parse_op_common_data(in_msg, in_msg_body);
 	var cs = in_msg.begin_parse();
 	var flags = cs~load_uint(4);
 	slice sender_address_slice = cs~load_msg_addr();
@@ -110,8 +99,8 @@
 
 		;;get stream info
 		(int to, int startTime, int endTime, int amount, int claimed) = getSourceInfo(streamCell);
+		int perSecond = amount / (endTime - startTime);
 
-		int perSecond = (endTime - startTime) / amount;
 		int lastTick = now();
 		if (now() > endTime){
 			lastTick = endTime;
@@ -121,7 +110,14 @@
 		int claimable = vested - claimed;
 
 		;;send claimable
-		send_grams(sender_address_slice, claimable);
+		var msg = begin_cell()
+			.store_uint(0x10, 6)
+			.store_slice(sender_address_slice)
+			.store_grams(claimable)
+			.store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+			.end_cell();
+
+		send_raw_message(msg, 64);
 
 		;;if this last withdraw, delete stream info cell
 		;;we use time instead of amount to not deal with rounding errors
