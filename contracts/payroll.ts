@@ -3,7 +3,7 @@ import { Contract, ContractProvider, Sender, Address, Cell, contractAddress, beg
 
 export default class Payroll implements Contract {
 
-  static createForDeploy(code: Cell, b: Blockchain): Payroll{
+  static createForDeploy(code: Cell): Payroll{
     const data = beginCell()
       .endCell();
     const workchain = 0; // deploy to workchain 0

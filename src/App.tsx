@@ -2,12 +2,11 @@ import "./App.css";
 import "@twa-dev/sdk";
 import { TonConnectButton, useTonAddress } from "@tonconnect/ui-react";
 import CountUp from "react-countup";
-import {
-  defaultAmount,
-  payeeAddress,
-  useTonConnect,
-} from "./hooks/useTonConnect";
-import { useState } from "react";
+import { useTonConnect } from "./hooks/useTonConnect";
+import { Address, beginCell, Cell } from "ton-core";
+import { useEffect, useState } from "react";
+import { usePayrollContract } from "./hooks/usePayrollContract";
+import { toBigIntBE, toBigIntLE, toBufferBE, toBufferLE } from "bigint-buffer";
 
 const SECONDS_IN_DAY = 86400;
 
@@ -19,15 +18,16 @@ const tabs = {
 function App() {
   const { connected, sender } = useTonConnect();
   const userFriendlyAddress = useTonAddress();
+  const { value, address } = usePayrollContract();
 
   const [tab, setTab] = useState(tabs.payroll);
 
   const [receiver, setReceiver] = useState<string>("");
   const [days, setDays] = useState<string>("");
-  const [amount, setAmount] = useState<string>("");
+  const [amountToStream, setAmountToStream] = useState<string>("");
 
   const handleCreateStream = async () => {
-    if (!receiver && !days && !amount) {
+    if (!receiver && !days && !amountToStream) {
       return;
     }
 
@@ -37,8 +37,41 @@ function App() {
     const endTimestamp = Math.floor(Date.now() / 1000 + +days * SECONDS_IN_DAY);
 
     // @todo write tx, amount should be converted to TON maybe
-    // await createStreamTx(receiver, Number(amount) * 10 ** 9, endTimestamp)
+    // await createStreamTx(receiver, Number(amountToStream) * 10 ** 9, endTimestamp)
   };
+  const [claimable, setClaimable] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [amount, setAmount] = useState(0.0);
+  const [claimPayload, setClaimPayload] = useState<Cell | null>(null);
+
+  useEffect(() => {
+    //info from SC
+    if (value == null) return;
+    const startTime = Number(value[1]);
+    const endTime = Number(value[2]);
+    const amount = Number(value[3] / BigInt(1000000000));
+    const claimed = Number(value[4] / BigInt(1000000000));
+    const buffer = toBufferBE(value[5], 32);
+    const fromAddress = new Address(0, buffer);
+
+    const claimPayload = beginCell()
+      .storeUint(2, 32) // op (op #2 = claim stream)
+      .storeUint(0, 64) // query id
+      .storeAddress(fromAddress)
+      .endCell();
+
+    //calculate for counter
+    const perSecond = amount / (endTime - startTime);
+    const curTime = Date.now() / 1000;
+    const lastTick = curTime > endTime ? endTime : curTime;
+    const vested = (lastTick - startTime) * perSecond;
+    const claimable = vested - claimed;
+
+    setClaimable(claimable);
+    setDuration(endTime - curTime);
+    setAmount(amount);
+    setClaimPayload(claimPayload);
+  }, [value, connected]);
 
   return (
     <div className="App">
@@ -95,9 +128,9 @@ function App() {
                     </svg>
 
                     <CountUp
-                      start={0}
-                      end={1000}
-                      duration={10000}
+                      start={claimable}
+                      end={amount}
+                      duration={duration}
                       separator=" "
                       decimals={4}
                       enableScrollSpy
@@ -116,8 +149,9 @@ function App() {
               className={`Button ${connected ? "Active" : "Disabled"}`}
               onClick={() =>
                 sender.send({
-                  value: defaultAmount,
-                  to: payeeAddress,
+                  value: BigInt("200000000"), //0.02
+                  to: address as Address,
+                  body: claimPayload,
                 })
               }
             >
@@ -197,8 +231,8 @@ function App() {
                       padding: "6px 10px",
                       marginTop: "4px",
                     }}
-                    value={amount}
-                    onChange={(e: any) => setAmount(e.target.value)}
+                    value={amountToStream}
+                    onChange={(e: any) => setAmountToStream(e.target.value)}
                   />
                 </div>
               </div>

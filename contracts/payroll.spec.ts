@@ -24,8 +24,7 @@ describe("Counter tests", () => {
 
     // prepare Payroll's initial code and data cells for deployment
     const payrollCode = Cell.fromBoc(fs.readFileSync("contracts/payroll.cell"))[0]; // compilation output 
-    const initialCounterValue = 17; // no collisions possible since sandbox is a private local instance
-    const payroll = Payroll.createForDeploy(payrollCode, blockchain);
+    const payroll = Payroll.createForDeploy(payrollCode);
 
     // deploy payroll
     payrollContract = blockchain.openContract(payroll);
