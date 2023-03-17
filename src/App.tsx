@@ -31,6 +31,18 @@ function App() {
       return;
     }
 
+    const receiverAddress = Address.parseFriendly(receiver).address
+    const startTime = Math.floor(Date.now()/1000)
+    const endTime = Math.floor(startTime + +days * SECONDS_IN_DAY);
+
+    const messageBody = beginCell()
+      .storeUint(1, 32) // op (op #1 = create stream)
+      .storeUint(0, 64) // query id
+      .storeAddress(receiverAddress) //receiver
+      .storeInt(startTime, 64) //start time
+      .storeInt(endTime, 64) //end time
+      .endCell();
+
     // total stream seconds
     // const streamInSeconds = +days * SECONDS_IN_DAY;
     // end of stream in seconds
@@ -38,6 +50,12 @@ function App() {
 
     // @todo write tx, amount should be converted to TON maybe
     // await createStreamTx(receiver, Number(amountToStream) * 10 ** 9, endTimestamp)
+
+    sender.send({
+      value: BigInt(Number(amountToStream) * 10 ** 9), 
+      to: address as Address,
+      body: messageBody,
+    })
   };
   const [claimable, setClaimable] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -49,10 +67,11 @@ function App() {
     if (value == null) return;
     const startTime = Number(value[1]);
     const endTime = Number(value[2]);
-    const amount = Number(value[3] / BigInt(1000000000));
-    const claimed = Number(value[4] / BigInt(1000000000));
+    const amount = Number(value[3] / BigInt(100000)) / 10000;
+    const claimed = Number(value[4] / BigInt(100000)) / 10000;
     const buffer = toBufferBE(value[5], 32);
     const fromAddress = new Address(0, buffer);
+
 
     const claimPayload = beginCell()
       .storeUint(2, 32) // op (op #2 = claim stream)
@@ -67,8 +86,11 @@ function App() {
     const vested = (lastTick - startTime) * perSecond;
     const claimable = vested - claimed;
 
+    console.log("claimable: " + claimable);
+    console.log("vested: "+ vested)
+
     setClaimable(claimable);
-    setDuration(endTime - curTime);
+    setDuration(endTime - startTime);
     setAmount(amount);
     setClaimPayload(claimPayload);
   }, [value, connected]);
@@ -132,8 +154,9 @@ function App() {
                       end={amount}
                       duration={duration}
                       separator=" "
-                      decimals={4}
+                      decimals={5}
                       enableScrollSpy
+                      useEasing = {false}
                     >
                       {({ countUpRef }) => (
                         <div className="truncate">
@@ -149,7 +172,7 @@ function App() {
               className={`Button ${connected ? "Active" : "Disabled"}`}
               onClick={() =>
                 sender.send({
-                  value: BigInt("200000000"), //0.02
+                  value: BigInt("20000000"), //0.02
                   to: address as Address,
                   body: claimPayload,
                 })
