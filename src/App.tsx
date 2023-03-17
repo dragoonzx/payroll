@@ -22,8 +22,6 @@ function App() {
 
   const [tab, setTab] = useState(tabs.payroll);
 
-  const amountToSend = Number(defaultAmount) / 10 ** 9;
-
   const [receiver, setReceiver] = useState<string>("");
   const [days, setDays] = useState<string>("");
   const [amount, setAmount] = useState<string>("");
@@ -38,7 +36,7 @@ function App() {
     // end of stream in seconds
     const endTimestamp = Math.floor(Date.now() / 1000 + +days * SECONDS_IN_DAY);
 
-    // write tx, amount should be converted to TON maybe
+    // @todo write tx, amount should be converted to TON maybe
     // await createStreamTx(receiver, Number(amount) * 10 ** 9, endTimestamp)
   };
 
