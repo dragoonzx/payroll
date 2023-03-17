@@ -130,7 +130,7 @@
 
 			;;rewrite modified stream info
 			receiverInsideDict~idict_set_ref(257, interactionAddress, streamCell);
-			receiverDict~idict_set_ref(257, sender_address, begin_cell().store_dict(receiverInsideDict).end_cell());
+			receiverDict~idict_set_ref(257, sender_address, receiverInsideDict);
 			senderDict~idict_set_ref(257, interactionAddress, streamCell);
 		}
 	}

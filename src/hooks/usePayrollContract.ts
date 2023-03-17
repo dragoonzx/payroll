@@ -13,7 +13,7 @@ export function usePayrollContract() {
   const payrollContract = useAsyncInitialize(async () => {
     if (!client) return;
     const contract = new Payroll(
-      Address.parse('EQDhGXlRn-yTg8yx4sdDwolWuONSz2RH6r9apI41wo3LUvym') 
+      Address.parse('EQDOVyMnu9fyhWrwEwpx412j0gAarGZVV8H7A63JzyfA-ujq') 
     );
     return client.open(contract) as OpenedContract<Payroll>;
   }, [client]);
