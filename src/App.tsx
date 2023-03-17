@@ -3,17 +3,54 @@ import "@twa-dev/sdk";
 import { TonConnectButton, useTonAddress } from "@tonconnect/ui-react";
 import CountUp from "react-countup";
 import {
-  defaultAmount,
-  payeeAddress,
   useTonConnect,
 } from "./hooks/useTonConnect";
+import { Address, beginCell, Cell} from "ton-core";
+import { useEffect, useState } from "react";
+import { usePayrollContract } from "./hooks/usePayrollContract";
+import {toBigIntBE, toBigIntLE, toBufferBE, toBufferLE} from 'bigint-buffer';
 
 function App() {
   const { connected, sender } = useTonConnect();
   const userFriendlyAddress = useTonAddress();
+  const { value, address } = usePayrollContract();
 
-  const amountToSend = Number(defaultAmount) / 10 ** 9;
+  const [claimable, setClaimable] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [amount, setAmount] = useState(0.0);
+  const [claimPayload, setClaimPayload] = useState<Cell|null>(null)
 
+  useEffect(() => {
+    //info from SC
+    if(value == null) return;
+    const startTime = Number(value[1]) 
+    const endTime = Number(value[2])
+    const amount = Number(value[3] / BigInt(1000000000))
+    const claimed = Number(value[4] / BigInt(1000000000))
+    const buffer = toBufferBE(value[5], 32)
+    const fromAddress = new Address(0, buffer);
+
+    const claimPayload =  beginCell()
+    .storeUint(2, 32) // op (op #2 = claim stream)
+    .storeUint(0, 64) // query id
+    .storeAddress(fromAddress) 
+    .endCell();
+
+    //calculate for counter
+    const perSecond = amount / (endTime - startTime);
+    const curTime = Date.now()/1000;
+    const lastTick = curTime > endTime ? endTime: curTime;
+    const vested = (lastTick - startTime) * perSecond;
+    const claimable = vested - claimed;
+
+    setClaimable(claimable);
+    setDuration(endTime-curTime);
+    setAmount(amount)
+    setClaimPayload(claimPayload)
+  }, [value, connected]); 
+
+
+  
   return (
     <div className="App">
       <div className="Container">
@@ -43,9 +80,9 @@ function App() {
                 />
 
                 <CountUp
-                  start={0}
-                  end={1000}
-                  duration={10000}
+                  start={claimable}
+                  end={amount}
+                  duration={duration}
                   separator=" "
                   decimals={4}
                   enableScrollSpy
@@ -64,8 +101,9 @@ function App() {
           className={`Button ${connected ? "Active" : "Disabled"}`}
           onClick={() =>
             sender.send({
-              value: defaultAmount,
-              to: payeeAddress,
+              value: BigInt("200000000"), //0.02
+              to: address as Address,
+              body: claimPayload
             })
           }
         >
